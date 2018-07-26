@@ -5,6 +5,7 @@ import random
 import json
 import sys
 import os
+from collections import defaultdict
 
 import networkx as nx
 from networkx.readwrite import json_graph
@@ -16,9 +17,52 @@ assert (major <= 1) and (minor <= 11), "networkx major version > 1.11"
 WALK_LEN=5
 N_WALKS=50
 
+class FakeGraph:
+    """
+    provide a similar interface to networkx but avoid the overhead. will this work?
+    """
+    def __init__(self):
+        self.node = {}
+        self._edges = defaultdict(lambda: defaultdict(lambda: {}))
+
+    def nodes(self):
+        return self.node.keys()
+
+    def edges(self):
+        for i in self._edges:
+            for j in self._edges[i]:
+                yield (i, j)
+
+    def add_edge(self, i, j):
+        self._edges[i][j] = {}
+
+    def add_node(self, node, data):
+        self.node[node] = data
+
+    def __getitem__(self, key):
+        return self._edges[key]
+
+    def neighbors(self, node):
+        for j in self._edges[node]:
+            yield j
+    
+
+
+
 def load_data(prefix, normalize=True, load_walks=False):
+    # Matt: I think the OOM problems are coming from this representation of the data
+    # So you'll need to make a different data format, and write the code to read it into the FakeGraph. 
+    # Below is just an example conversion of the networkx graph into the wrapper
+    # To show that the training code still works
     G_data = json.load(open(prefix + "-G.json"))
-    G = json_graph.node_link_graph(G_data)
+    G_pre = json_graph.node_link_graph(G_data)
+    G = FakeGraph()
+    for edge in G_pre.edges():
+        G.add_edge(edge[0], edge[1])
+
+    for node in G_pre.nodes():
+        G.add_node(node, G_pre.node[node])
+
     if isinstance(G.nodes()[0], int):
         conversion = lambda n : int(n)
     else:
@@ -42,12 +86,12 @@ def load_data(prefix, normalize=True, load_walks=False):
 
     ## Remove all nodes that do not have val/test annotations
     ## (necessary because of networkx weirdness with the Reddit data)
-    broken_count = 0
-    for node in G.nodes():
-        if not 'val' in G.node[node] or not 'test' in G.node[node]:
-            G.remove_node(node)
-            broken_count += 1
-    print("Removed {:d} nodes that lacked proper annotations due to networkx versioning issues".format(broken_count))
+    #broken_count = 0
+    #for node in G.nodes():
+        #if not 'val' in G.node[node] or not 'test' in G.node[node]:
+            #G.remove_node(node)
+            #broken_count += 1
+    #print("Removed {:d} nodes that lacked proper annotations due to networkx versioning issues".format(broken_count))
 
     ## Make sure the graph has edge train_removed annotations
     ## (some datasets might already have this..)
